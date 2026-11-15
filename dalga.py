@@ -242,6 +242,11 @@ EFEKTLER = [
     ("ates", "Ateş", "Basılan yerde titreyen alevler yanar (kendi renkleri)"),
     ("carpisma", "Çarpışma", "İki ışık iki kenardan gelir, basılan yerde çarpışıp patlar"),
     ("patlama", "Patlama", "Gökkuşağı renklerinde yayılan halka"),
+    ("sarkac", "Sarkaç", "Işık iki kenar arasında sekerek gidip gelir, yavaşça söner"),
+    ("ice", "İçe dalga", "Halka kenarlardan basılan yere doğru daralır ve orada parlar"),
+    ("konfeti", "Konfeti", "Klavyenin rastgele yerlerinde rengârenk ışıklar çakar"),
+    ("yagmur", "Dijital yağmur", "Yeşil kod damlaları klavyede titreşerek söner (kendi rengi)"),
+    ("seviye", "Seviye", "Yazdıkça soldan sağa dolan hız göstergesi: yeşil, sarı, kırmızı"),
 ]
 EFEKT_ADLARI = [e[0] for e in EFEKTLER]
 
@@ -251,6 +256,10 @@ ISI_RENKLERI = [  # soguktan sicaga
     (1.00, (255, 255, 255)),
 ]
 
+
+SEVIYE_RENKLERI = [
+    (0.00, (0, 255, 60)), (0.50, (255, 220, 0)), (1.00, (255, 20, 20)),
+]
 
 ATES_RENKLERI = [
     (0.00, (0, 0, 0)), (0.25, (120, 0, 0)), (0.50, (255, 40, 0)),
@@ -290,15 +299,25 @@ def omur_sure(ayar):
         return 1.6
     if e == "carpisma":
         return BOLGE_SAYISI / hiz + omur * 2.5
+    if e == "sarkac":
+        return omur * 9
+    if e == "ice":
+        return (BOLGE_SAYISI + float(ayar["kalinlik"])) / hiz + omur * 2
+    if e == "konfeti":
+        return 0.8
+    if e == "yagmur":
+        return 1.4
+    if e == "seviye":
+        return 5.0
     return omur * 2.5
 
 
 def kapasite(ayar):
     """Ayni anda hesaba katilan en fazla basis."""
     e = ayar.get("efekt", "dalga")
-    if e == "isi":
+    if e in ("isi", "seviye"):
         return 60
-    if e in ("kivilcim", "ates"):
+    if e in ("kivilcim", "ates", "konfeti", "yagmur"):
         return 16
     return max(1, int(ayar["max_dalga"]))
 
@@ -328,6 +347,18 @@ def kare_hesapla(aktif, simdi, ayar):
                 enerji[z] += sonum * math.exp(-(m * m) / (2 * (0.6 * kalinlik) ** 2))
         for z in range(n):
             ekle(z, _isi_rengi(enerji[z] / 9.0), 1.0)
+        aktif = ()
+
+    if efekt == "seviye":
+        seviye = 0.0
+        for merkez, basla, _ in aktif:
+            yas = simdi - basla
+            if yas >= 0:
+                seviye += 0.7 * math.exp(-yas / 1.3)
+        for z in range(n):
+            dolu = max(0.0, min(1.0, seviye - z))
+            if dolu > 0:
+                ekle(z, _isi_rengi(z / (n - 1), SEVIYE_RENKLERI), dolu)
         aktif = ()
 
     if efekt == "ates":
@@ -426,6 +457,45 @@ def kare_hesapla(aktif, simdi, ayar):
                     s = 1.0
                 r, g, b = colorsys.hsv_to_rgb((h0 + m * 0.11) % 1.0, 1.0, 1.0)
                 ekle(z, (r * 255, g * 255, b * 255), s * sonum)
+        elif efekt == "sarkac":
+            yon = 1.0 if merkez < n / 2 else -1.0
+            q = (merkez + yon * yas * hiz) % (2 * n)
+            if q > n:
+                q = 2 * n - q  # kenara carpinca geri sek
+            genis = max(0.5, kalinlik * 0.6)
+            sonum = math.exp(-yas / (omur * 3))
+            for z in range(n):
+                ekle(z, renk, max(0.0, 1.0 - abs((z + 0.5) - q) / genis) * sonum)
+        elif efekt == "ice":
+            r0 = max(merkez, n - merkez) + kalinlik
+            varis = r0 / hiz
+            for z in range(n):
+                m = abs((z + 0.5) - merkez)
+                if yas < varis:
+                    v = _halka(m, r0 - yas * hiz, kalinlik) * (0.35 + 0.65 * yas / varis)
+                else:
+                    d = yas - varis
+                    v = math.exp(-d / (omur * 0.7)) * max(0.0, 1.0 - m / (1.0 + kalinlik))
+                ekle(z, renk, v)
+        elif efekt == "konfeti":
+            rnd = random.Random(int(basla * 1e6))
+            for _ in range(4):
+                z = rnd.randrange(n)
+                r, g, b = colorsys.hsv_to_rgb(rnd.random(), 1.0, 1.0)
+                y = yas - rnd.random() * 0.15
+                if y >= 0:
+                    ekle(z, (r * 255, g * 255, b * 255), math.exp(-y / 0.18))
+        elif efekt == "yagmur":
+            rnd = random.Random(int(basla * 1e6))
+            yesil = (0, 255, 70)
+            for _ in range(5):
+                z = rnd.randrange(n)
+                y = yas - rnd.random() * 0.5
+                if y >= 0:
+                    titre = 0.65 + 0.35 * math.sin(simdi * 40 + z * 5.0 + rnd.random() * 6)
+                    bas = 1.0 if y < 0.05 else 0.0  # damlanin basi beyazimsi parlasin
+                    ekle(z, tuple(c + (255 - c) * 0.6 * bas for c in yesil),
+                         math.exp(-y / 0.35) * titre)
         else:  # dalga
             sonum = math.exp(-yas / omur)
             for z in range(n):
@@ -893,14 +963,22 @@ class Uygulama:
         tk.Label(govde, text="Apex 3 TKL  ·  tuşa bastıkça yayılan ışık", font=font(9),
                  fg=SOLUK, bg=BG, anchor="w").pack(fill="x", pady=(px(2), px(16)))
 
+        # --- iki sutun: solda onizleme + efekt, sagda bekleme + GG ---
+        sutunlar = tk.Frame(govde, bg=BG)
+        sutunlar.pack(fill="both", expand=True)
+        sol = tk.Frame(sutunlar, bg=BG)
+        sol.grid(row=0, column=0, sticky="n")
+        sag_sutun = tk.Frame(sutunlar, bg=BG, width=px(420))
+        sag_sutun.grid(row=0, column=1, sticky="nsew", padx=(px(32), 0))
+
         # --- onizleme ---
-        self.onizleme = Onizleme(govde, BG, self._deneme_dalga)
+        self.onizleme = Onizleme(sol, BG, self._deneme_dalga)
         self.onizleme.pack()
-        self.ipucu = tk.Label(govde, text="", font=font(8), fg=PASIF, bg=BG)
+        self.ipucu = tk.Label(sol, text="", font=font(8), fg=PASIF, bg=BG)
         self.ipucu.pack(pady=(px(6), 0))
 
-        # --- ayarlar ---
-        self.liste = tk.Frame(govde, bg=BG)
+        # --- ayarlar (sol) ---
+        self.liste = tk.Frame(sol, bg=BG)
         self.liste.pack(fill="x")
 
         self._bolum("Efekt")
@@ -922,7 +1000,14 @@ class Uygulama:
                                self.ayar["mod"], self._mod_degisti, BG, genislik=180)
         self.segment.pack(side="right", padx=(0, px(10)))
 
-        self._bolum("Bekleme ışığı")
+        # --- ayarlar (sag) ---
+        self.ana = Dugme(sag_sutun, "Başlat", self._ac_kapat, BG)
+        self.ana.pack(side="bottom", fill="x")
+        self.liste = tk.Frame(sag_sutun, bg=BG)
+        self.liste.pack(side="top", fill="x")
+        tk.Frame(self.liste, bg=BG, width=px(420), height=1).pack()  # sutun genisligi
+
+        self._bolum("Bekleme ışığı", ust=0)
         sag = self._satir("Açık")
         self.bek_anahtar = Anahtar(sag, self.ayar["bekleme_acik"], self._bek_ac, BG)
         self.bek_anahtar.pack(side="right")
@@ -946,9 +1031,6 @@ class Uygulama:
         sag = self._satir("Çalışırken SteelSeries GG ışıklarını duraklat")
         Anahtar(sag, self.ayar["gg_geri"], self._gg_ac, BG).pack(side="right")
 
-        # --- ana dugme ---
-        self.ana = Dugme(govde, "Başlat", self._ac_kapat, BG)
-        self.ana.pack(fill="x", pady=(px(22), 0))
 
         self._gorunum_senkron()
         root.protocol("WM_DELETE_WINDOW", self._kapat)
@@ -956,9 +1038,9 @@ class Uygulama:
         self._kare()
 
     # --- yapi taslari ---
-    def _bolum(self, baslik):
+    def _bolum(self, baslik, ust=16):
         tk.Label(self.liste, text=baslik.upper(), font=font(8, True), fg=PASIF, bg=BG,
-                 anchor="w").pack(fill="x", pady=(px(16), px(4)))
+                 anchor="w").pack(fill="x", pady=(px(ust), px(4)))
         tk.Frame(self.liste, bg=CIZGI, height=1).pack(fill="x")
 
     def _satir(self, ad):
