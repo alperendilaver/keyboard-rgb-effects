@@ -47,6 +47,7 @@ VARSAYILAN = {
     "efekt": "dalga",           # EFEKTLER listesinden biri
     "bekleme_acik": False,      # bekleme isigi acik mi
     "bekleme_mod": "sabit",     # BEKLEME_MODLARI listesinden biri
+    "nefes_renk": "sabit",      # nefes modunun rengi: "sabit", "dongu", "akis"
     "bekleme_renk": "#3b1fa3",  # bekleme isigi rengi
     "bekleme_parlaklik": 35,    # bekleme isigi parlakligi, yuzde 1-100
     "bekleme_hiz": 1.0,         # bekleme animasyon hizi, 0.2x - 3x
@@ -82,6 +83,8 @@ def ayar_temizle(ayar):
         ayar["mod"] = VARSAYILAN["mod"]
     if ayar["bekleme_mod"] == "gokkusagi":  # eski surumden kalan ad
         ayar["bekleme_mod"] = "dongu"
+    if ayar["nefes_renk"] not in ("sabit", "dongu", "akis"):
+        ayar["nefes_renk"] = VARSAYILAN["nefes_renk"]
     if ayar["bekleme_mod"] not in [m[0] for m in BEKLEME_MODLARI]:
         ayar["bekleme_mod"] = VARSAYILAN["bekleme_mod"]
     if ayar["efekt"] not in EFEKT_ADLARI:
@@ -206,11 +209,16 @@ def bekleme_renkleri(ayar, simdi):
     k = max(0.0, min(1.0, float(ayar["bekleme_parlaklik"]) / 100.0))
     mod = ayar.get("bekleme_mod")
     t = _faz.al(simdi, float(ayar.get("bekleme_hiz", 1.0)))  # hizla olceklenmis zaman
-    if mod == "dongu":
+    # renk kaynagi: nefes modu kendi secimini kullanir
+    kaynak = ayar.get("nefes_renk", "sabit") if mod == "nefes" else mod
+    if mod == "nefes":
+        # 4 saniyede bir yavasca dolup bosalan isik
+        k *= 0.12 + 0.88 * (0.5 - 0.5 * math.cos(2 * math.pi * t / 4.0))
+    if kaynak == "dongu":
         # butun klavye birlikte, yavasca renk degistirir (~20 sn'de bir tur)
         r, g, b = colorsys.hsv_to_rgb((t * 0.05) % 1.0, 1.0, 1.0)
         return [(r * 255 * k, g * 255 * k, b * 255 * k)] * n
-    if mod == "akis":
+    if kaynak == "akis":
         # klavye boyunca akan gokkusagi
         sonuc = []
         for z in range(n):
@@ -218,9 +226,6 @@ def bekleme_renkleri(ayar, simdi):
             sonuc.append((r * 255 * k, g * 255 * k, b * 255 * k))
         return sonuc
     r, g, b = hex_rgb(ayar["bekleme_renk"])
-    if mod == "nefes":
-        # 4 saniyede bir yavasca dolup bosalan isik
-        k *= 0.12 + 0.88 * (0.5 - 0.5 * math.cos(2 * math.pi * t / 4.0))
     return [(r * k, g * k, b * k)] * n
 
 
@@ -651,14 +656,15 @@ class Segment(tk.Canvas):
     def __init__(self, ebeveyn, secenekler, deger, geri, bg, genislik=220):
         super().__init__(ebeveyn, width=px(genislik), height=px(30), bg=bg,
                          highlightthickness=0, cursor="hand2")
-        self.secenekler, self.deger, self.geri = secenekler, deger, geri
+        self.secenekler, self.deger, self.geri, self.aktif = secenekler, deger, geri, True
         self.bind("<Configure>", lambda e: self.ciz())
         self.bind("<Button-1>", self._tik)
 
     def ciz(self):
         self.delete("all")
         w, h = self.winfo_width(), self.winfo_height()
-        yuvarlak(self, 0, 0, w, h, px(8), fill=CIZGI, outline="")
+        self.config(cursor="hand2" if self.aktif else "arrow")
+        yuvarlak(self, 0, 0, w, h, px(8), fill=CIZGI if self.aktif else YUZEY, outline="")
         n = len(self.secenekler)
         for i, (ad, d) in enumerate(self.secenekler):
             x1, x2 = w * i / n, w * (i + 1) / n
@@ -666,10 +672,15 @@ class Segment(tk.Canvas):
             if secili:
                 yuvarlak(self, x1 + px(3), px(3), x2 - px(3), h - px(3), px(6),
                          fill=YUZEY, outline="")
-            self.create_text((x1 + x2) / 2, h / 2, text=ad, font=font(9, secili),
-                             fill=FG if secili else SOLUK)
+            if not self.aktif:
+                yazi = PASIF
+            else:
+                yazi = FG if secili else SOLUK
+            self.create_text((x1 + x2) / 2, h / 2, text=ad, font=font(9, secili), fill=yazi)
 
     def _tik(self, e):
+        if not self.aktif:
+            return
         i = min(len(self.secenekler) - 1, int(e.x / self.winfo_width() * len(self.secenekler)))
         d = self.secenekler[i][1]
         if d != self.deger:
@@ -918,6 +929,11 @@ class Uygulama:
         self.bek_secim = Secim(self.liste, [(m[1], m[0]) for m in BEKLEME_MODLARI],
                                self.ayar["bekleme_mod"], self._bek_mod_degisti, BG, sutun=4)
         self.bek_secim.pack(fill="x", pady=(px(10), 0))
+        sag = self._satir("Nefes rengi")
+        self.nefes_segment = Segment(
+            sag, [("Seçili renk", "sabit"), ("Döngü", "dongu"), ("Gökkuşağı", "akis")],
+            self.ayar["nefes_renk"], self._nefes_renk_degisti, BG, genislik=270)
+        self.nefes_segment.pack(side="right")
         sag = self._satir("Renk")
         self.bek_ornek = Ornek(sag, self.ayar["bekleme_renk"], self._bek_renk_sec, BG)
         self.bek_ornek.pack(side="right")
@@ -975,6 +991,11 @@ class Uygulama:
         self.ornek.ciz()
         acik = self.ayar["bekleme_acik"]
         renkli = next(m[2] for m in BEKLEME_MODLARI if m[0] == self.ayar["bekleme_mod"])
+        nefes = self.ayar["bekleme_mod"] == "nefes"
+        if nefes:
+            renkli = self.ayar["nefes_renk"] == "sabit"
+        self.nefes_segment.aktif = acik and nefes
+        self.nefes_segment.ciz()
         self.bek_ornek.aktif = acik
         self.bek_ornek.gokkusagi = not renkli
         self.efekt_aciklama.config(
@@ -1027,6 +1048,11 @@ class Uygulama:
 
     def _bek_mod_degisti(self, deger):
         self.ayar["bekleme_mod"] = deger
+        self._gorunum_senkron()
+        self._kaydet_planla()
+
+    def _nefes_renk_degisti(self, deger):
+        self.ayar["nefes_renk"] = deger
         self._gorunum_senkron()
         self._kaydet_planla()
 
