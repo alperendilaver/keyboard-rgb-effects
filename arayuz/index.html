@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dalga</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Baslik cubugu (pencereyi buradan surukle) -->
+  <header class="titlebar pywebview-drag-region">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 20 20" aria-hidden="true">
+        <rect x="2" y="8" width="2.5" height="4" rx="1.25"/>
+        <rect x="6.5" y="5" width="2.5" height="10" rx="1.25"/>
+        <rect x="11" y="2" width="2.5" height="16" rx="1.25"/>
+        <rect x="15.5" y="6" width="2.5" height="8" rx="1.25"/>
+      </svg>
+      <span class="brand-name">Dalga</span>
+      <span class="brand-version" id="surum"></span>
+    </div>
+    <div class="titlebar-right">
+      <div class="status" id="status">
+        <span class="status-dot"></span>
+        <span class="status-device">Apex 3 TKL</span>
+        <span class="status-sep"></span>
+        <span class="status-text" id="statusText">Hazırlanıyor</span>
+      </div>
+      <div class="window-controls">
+        <button class="wc" id="btnMin" aria-label="Küçült">
+          <svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg>
+        </button>
+        <button class="wc wc-close" id="btnClose" aria-label="Kapat">
+          <svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="app">
+    <!-- Efekt listesi -->
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span class="eyebrow">Efektler</span>
+        <span class="count" id="efektSayisi"></span>
+      </div>
+      <nav class="effect-list" id="efektListesi" role="listbox" aria-label="Efektler"></nav>
+      <div class="sidebar-foot">
+        <kbd>↑</kbd><kbd>↓</kbd> efekt değiştir
+      </div>
+    </aside>
+
+    <!-- Ana alan -->
+    <main class="main">
+      <div class="main-head">
+        <div>
+          <h1 id="efektAdi">&nbsp;</h1>
+          <p class="sub" id="efektAciklama">&nbsp;</p>
+        </div>
+        <button class="primary" id="btnBaslat">
+          <svg class="ic-play" viewBox="0 0 16 16"><path d="M5 3.5v9l7-4.5z"/></svg>
+          <svg class="ic-stop" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>
+          <span id="btnBaslatYazi">Başlat</span>
+          <kbd class="kbd-on-primary">Space</kbd>
+        </button>
+      </div>
+
+      <section class="stage" id="stage">
+        <div class="glow" id="glow"></div>
+        <div class="keyboard" id="klavye"></div>
+        <div class="stage-hint" id="ipucu">
+          <span class="live-dot"></span><span id="ipucuYazi">Denemek için klavyeye tıkla</span>
+        </div>
+      </section>
+
+      <div class="cards">
+        <section class="card">
+          <header class="card-head"><h2>Hareket</h2></header>
+          <div class="field">
+            <label for="hiz">Hız</label>
+            <input type="range" id="hiz" min="2" max="20" step="0.5">
+            <output for="hiz"></output>
+          </div>
+          <div class="field">
+            <label for="kalinlik">Kalınlık</label>
+            <input type="range" id="kalinlik" min="0.8" max="4" step="0.1">
+            <output for="kalinlik"></output>
+          </div>
+          <div class="field">
+            <label for="parlaklik">Parlaklık</label>
+            <input type="range" id="parlaklik" min="5" max="100" step="1">
+            <output for="parlaklik"></output>
+          </div>
+        </section>
+
+        <section class="card">
+          <header class="card-head"><h2>Renk</h2></header>
+          <div class="segmented" id="renkModu" role="radiogroup">
+            <button data-v="gokkusagi" role="radio">Gökkuşağı</button>
+            <button data-v="sabit" role="radio">Sabit renk</button>
+          </div>
+          <div class="swatches" id="renkler" data-ayar="renk"></div>
+          <p class="note" id="renkNotu"></p>
+        </section>
+      </div>
+    </main>
+
+    <!-- Sag panel -->
+    <aside class="inspector">
+      <section class="panel">
+        <header class="panel-head">
+          <div>
+            <h2>Bekleme ışığı</h2>
+            <p class="sub">Tuşlara basılmadığında yanan ışık</p>
+          </div>
+          <button class="switch" id="bekAcik" role="switch" aria-label="Bekleme ışığı"></button>
+        </header>
+        <div class="panel-body" id="bekGovde">
+          <div class="mode-grid" id="bekModlari" role="radiogroup"></div>
+
+          <div class="collapse" id="nefesBolum">
+            <div class="field-label">Nefes rengi</div>
+            <div class="segmented" id="nefesRenk" role="radiogroup">
+              <button data-v="sabit" role="radio">Seçili renk</button>
+              <button data-v="dongu" role="radio">Döngü</button>
+              <button data-v="akis" role="radio">Gökkuşağı</button>
+            </div>
+          </div>
+
+          <div class="collapse" id="bekRenkBolum">
+            <div class="field-label">Renk</div>
+            <div class="swatches" id="bekRenkler" data-ayar="bekleme_renk"></div>
+          </div>
+
+          <div class="field" id="bekHizAlan">
+            <label for="bekleme_hiz">Hız</label>
+            <input type="range" id="bekleme_hiz" min="0.2" max="3" step="0.1">
+            <output for="bekleme_hiz"></output>
+          </div>
+          <div class="field">
+            <label for="bekleme_parlaklik">Parlaklık</label>
+            <input type="range" id="bekleme_parlaklik" min="1" max="100" step="1">
+            <output for="bekleme_parlaklik"></output>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header class="panel-head">
+          <div>
+            <h2>SteelSeries GG</h2>
+            <p class="sub">Çalışırken GG ışıklarını duraklat, durunca profili geri getir</p>
+          </div>
+          <button class="switch" id="ggGeri" role="switch" aria-label="GG ışıklarını duraklat"></button>
+        </header>
+      </section>
+
+      <footer class="inspector-foot">Ayarlar otomatik kaydedilir</footer>
+    </aside>
+  </div>
+
+  <input type="color" id="renkSecici" hidden>
+  <script src="app.js"></script>
+</body>
+</html>

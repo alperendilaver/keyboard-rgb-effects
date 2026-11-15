@@ -1,9 +1,10 @@
 """
-DALGA v0.5 - Apex 3 TKL icin tusa basinca bolgesel dalga efekti (arayuzlu)
+DALGA v0.6 - Apex 3 TKL icin tusa basinca bolgesel dalga efekti (arayuzlu)
 
 Gerekenler:
-    - apex_hid.py ve gg.py bu dosyayla AYNI klasorde olmali
-    - pip install keyboard
+    - apex_hid.py, gg.py, arayuz_web.py ve arayuz/ klasoru bu dosyayla AYNI yerde olmali
+    - pip install keyboard pywebview
+      (pywebview yoksa eski, sade Tkinter arayuzu acilir)
 
 SteelSeries GG acik kalabilir: Dalga calisirken GG isiklari duraklatilir,
 durunca GG'deki isik profili geri gelir.
@@ -18,6 +19,7 @@ import math
 import os
 import random
 import re
+import sys
 import threading
 import time
 import tkinter as tk
@@ -29,7 +31,7 @@ import keyboard
 from apex_hid import ApexKlavye
 from gg import GG
 
-SURUM = "v0.5"
+SURUM = "v0.6"
 KLASOR = os.path.dirname(os.path.abspath(__file__))
 AYAR_DOSYASI = os.path.join(KLASOR, "ayarlar.json")
 
@@ -1213,4 +1215,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--klasik" in sys.argv:
+        main()
+    else:
+        try:
+            import arayuz_web  # modern arayuz (pywebview)
+        except ImportError:
+            main()  # pywebview kurulu degil: klasik arayuz
+        else:
+            arayuz_web.main()
