@@ -142,6 +142,7 @@ const BICIM = {
   parlaklik: (v) => `${Math.round(v)}%`,
   bekleme_hiz: (v) => `${(+v).toFixed(1)}×`,
   bekleme_parlaklik: (v) => `${Math.round(v)}%`,
+  oto_dakika: (v) => `${Math.round(v)} dk`,
 };
 
 function kaydiriciBagla(id) {
@@ -257,6 +258,26 @@ function goster() {
   $("#bekHizAlan").classList.toggle("disabled", ayar.bekleme_mod === "sabit");
 
   $("#ggGeri").setAttribute("aria-checked", String(!!ayar.gg_geri));
+
+  $("#otoDegis").setAttribute("aria-checked", String(!!ayar.oto_degis));
+  $("#otoGovde").classList.toggle("off", !ayar.oto_degis);
+  kalanGoster(sonKalan);
+}
+
+let sonKalan = -1;
+
+function kalanGoster(sn) {
+  sonKalan = sn == null ? -1 : sn;
+  const kutu = $("#otoSayac");
+  const etiket = $("#otoKalan");
+  if (sn == null || sn < 0) {
+    kutu.classList.remove("active");
+    etiket.textContent = ayar.oto_degis ? "Başlatınca saymaya başlar" : "Kapalı";
+    return;
+  }
+  kutu.classList.add("active");
+  const d = Math.floor(sn / 60), s = sn % 60;
+  etiket.textContent = `${d}:${String(s).padStart(2, "0")}`;
 }
 
 function ozelRenk(kap, renk) {
@@ -324,6 +345,17 @@ window.dalgaKare = (p) => {
   kareGoster(p.kare);
   if (p.galeri) galeriGoster(p.galeri);
   if (p.durum) durumGoster(p.durum);
+  if (p.ayar) {
+    // otomatik degisim efekti degistirdi
+    ayar = p.ayar;
+    goster();
+    const el = liste.querySelector(`[data-id="${ayar.efekt}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+    }
+  }
+  if ("oto_kalan" in p) kalanGoster(p.oto_kalan);
 };
 
 /* ---------------- Baslangic ---------------- */
@@ -337,13 +369,15 @@ async function basla(apiNesnesi) {
   listeCiz();
   modlariCiz();
   goster();
+  kalanGoster(-1);
 }
 
-["hiz", "kalinlik", "parlaklik", "bekleme_hiz", "bekleme_parlaklik"].forEach(kaydiriciBagla);
+["hiz", "kalinlik", "parlaklik", "bekleme_hiz", "bekleme_parlaklik", "oto_dakika"].forEach(kaydiriciBagla);
 segmentBagla($("#renkModu"), "mod");
 segmentBagla($("#nefesRenk"), "nefes_renk");
 anahtarBagla($("#bekAcik"), "bekleme_acik");
 anahtarBagla($("#ggGeri"), "gg_geri");
+anahtarBagla($("#otoDegis"), "oto_degis");
 renkleriCiz($("#renkler"));
 renkleriCiz($("#bekRenkler"));
 $("#btnMin").addEventListener("click", () => api && api.kucult());

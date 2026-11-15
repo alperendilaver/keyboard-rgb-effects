@@ -148,6 +148,27 @@
       <section class="panel">
         <header class="panel-head">
           <div>
+            <h2>Otomatik değişim</h2>
+            <p class="sub">Efekt belirlediğin aralıkla rastgele değişir</p>
+          </div>
+          <button class="switch" id="otoDegis" role="switch" aria-label="Otomatik değişim"></button>
+        </header>
+        <div class="panel-body" id="otoGovde">
+          <div class="field">
+            <label for="oto_dakika">Aralık</label>
+            <input type="range" id="oto_dakika" min="1" max="60" step="1">
+            <output for="oto_dakika"></output>
+          </div>
+          <div class="countdown" id="otoSayac">
+            <span class="countdown-label">Sıradaki değişim</span>
+            <span class="countdown-value" id="otoKalan">Başlatınca saymaya başlar</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header class="panel-head">
+          <div>
             <h2>SteelSeries GG</h2>
             <p class="sub">Çalışırken GG ışıklarını duraklat, durunca profili geri getir</p>
           </div>

@@ -54,6 +54,8 @@ VARSAYILAN = {
     "bekleme_parlaklik": 35,    # bekleme isigi parlakligi, yuzde 1-100
     "bekleme_hiz": 1.0,         # bekleme animasyon hizi, 0.2x - 3x
     "gg_geri": True,            # calisirken GG isiklarini duraklat, durunca geri getir
+    "oto_degis": False,         # efektler belirli araliklarla rastgele degissin
+    "oto_dakika": 5,            # otomatik degisim araligi (dakika), 1-60
     "omur": 0.55,               # dalganin sonme suresi (saniye)  [sadece dosyadan]
     "fps": 25,                  # kare hizi                       [sadece dosyadan]
     "max_dalga": 8,             # ayni anda en fazla dalga        [sadece dosyadan]
@@ -71,6 +73,7 @@ def ayar_temizle(ayar):
         ("parlaklik", 5, 100),
         ("bekleme_parlaklik", 1, 100),
         ("bekleme_hiz", 0.2, 3.0),
+        ("oto_dakika", 1, 60),
     ):
         try:
             v = float(ayar[k])
@@ -93,6 +96,8 @@ def ayar_temizle(ayar):
         ayar["efekt"] = VARSAYILAN["efekt"]
     ayar["bekleme_acik"] = bool(ayar["bekleme_acik"])
     ayar["gg_geri"] = bool(ayar["gg_geri"])
+    ayar["oto_degis"] = bool(ayar["oto_degis"])
+    ayar["oto_dakika"] = int(round(ayar["oto_dakika"]))
     return ayar
 
 

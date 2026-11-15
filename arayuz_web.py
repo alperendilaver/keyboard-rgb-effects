@@ -11,6 +11,7 @@ Calistir:    py dalga.py
 
 import json
 import os
+import random
 import threading
 import time
 
@@ -40,6 +41,8 @@ class Api:
         self._pencere = None
         self._kayit_zamani = None
         self._son_durum = None
+        self._sonraki_degisim = None  # otomatik efekt degisimi zamani (time.time)
+        self._son_kalan = None
 
     # ---------------- JS'in cagirdiklari ----------------
     def baslangic(self):
@@ -53,6 +56,8 @@ class Api:
         }
 
     def ayar(self, degerler):
+        if "oto_degis" in degerler or "oto_dakika" in degerler:
+            self._sonraki_degisim = None  # sayaci yeniden kur
         with self._kilit:
             yeni = dict(self._ayar)
             for k, v in (degerler or {}).items():
@@ -66,6 +71,7 @@ class Api:
         return self._ayar
 
     def baslat(self):
+        self._sonraki_degisim = None
         self._motor.baslat()
         return self._durum()
 
@@ -93,6 +99,26 @@ class Api:
     def _durum(self):
         m = self._motor
         return {"calisiyor": m.calisiyor, "mesaj": m.durum, "hata": m.durum_hata}
+
+    def _oto_degisim(self, simdi):
+        """Acik ve calisiyorsa, sure dolunca rastgele baska bir efekte gecer.
+        Kalan saniyeyi (ya da None) dondurur; efekt degistiyse ikinci deger True."""
+        if not (self._ayar.get("oto_degis") and self._motor.calisiyor):
+            self._sonraki_degisim = None
+            return None, False
+        aralik = max(1, int(self._ayar.get("oto_dakika", 5))) * 60
+        if self._sonraki_degisim is None:
+            self._sonraki_degisim = simdi + aralik
+        if simdi < self._sonraki_degisim:
+            return self._sonraki_degisim - simdi, False
+        secenekler = [e for e, _, _ in EFEKTLER if e != self._ayar.get("efekt")]
+        self._ayar["efekt"] = random.choice(secenekler)
+        self._deneme.clear()
+        with self._motor.kilit:
+            self._motor.dalgalar.clear()
+        self._sonraki_degisim = simdi + aralik
+        self._kayit_zamani = simdi + 0.4
+        return aralik, True
 
     def _galeri(self, simdi):
         """Her efekt icin 2.2 sn'de bir tekrarlanan demo basislariyla bir kare."""
@@ -137,6 +163,14 @@ class Api:
             if d != self._son_durum:
                 self._son_durum = d
                 paket["durum"] = d
+            with self._kilit:
+                kalan, degisti = self._oto_degisim(t0)
+            kalan = None if kalan is None else int(kalan + 0.999)
+            if kalan != self._son_kalan:
+                self._son_kalan = kalan
+                paket["oto_kalan"] = kalan if kalan is not None else -1
+            if degisti:
+                paket["ayar"] = self._ayar
             try:
                 js("window.dalgaKare && window.dalgaKare(%s)" % json.dumps(paket))
             except Exception:
