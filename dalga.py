@@ -287,6 +287,9 @@ def _halka(mesafe, yaricap, kalinlik):
     return max(0.0, 1.0 - abs(mesafe - yaricap) / kalinlik)
 
 
+EN_GUCLU_KARISIM = {"kuzey", "plazma", "neon", "domino"}
+
+
 def omur_sure(ayar):
     """Bir basisin ekranda kalma suresi (saniye); bundan eskiler silinir."""
     e = ayar.get("efekt", "dalga")
@@ -354,6 +357,16 @@ def kare_hesapla(aktif, simdi, ayar):
         toplam[z][0] += renk[0] * v
         toplam[z][1] += renk[1] * v
         toplam[z][2] += renk[2] * v
+
+    # Bazi efektlerde basislar toplanmaz: her bolgede EN GUCLU basisin rengi
+    # gosterilir. Yoksa farkli renkler ust uste binip beyaza kacar.
+    en_guclu = [(0.0, (0, 0, 0))] * n
+
+    def koy(z, renk, v):
+        if efekt not in EN_GUCLU_KARISIM:
+            ekle(z, renk, v)
+        elif v > en_guclu[z][0]:
+            en_guclu[z] = (v, renk)
 
     if efekt == "isi":
         enerji = [0.0] * n
@@ -544,7 +557,7 @@ def kare_hesapla(aktif, simdi, ayar):
                 v = zarf * math.exp(-(m * m) / (2 * genis * genis))
                 ton = 0.33 + 0.45 * (0.5 + 0.5 * math.sin(simdi * 1.3 + z * 0.6 + tohum))
                 rr, gg, bb = colorsys.hsv_to_rgb(ton, 0.9, 1.0)
-                ekle(z, (rr * 255, gg * 255, bb * 255), v)
+                koy(z, (rr * 255, gg * 255, bb * 255), v)
         elif efekt == "plazma":
             h0 = colorsys.rgb_to_hsv(*(c / 255.0 for c in renk))[0]
             tohum = (basla * 1000) % 50
@@ -556,7 +569,7 @@ def kare_hesapla(aktif, simdi, ayar):
                        (0.6 + 0.4 * math.sin(z * 0.7 + simdi * 4))
                 rr, gg, bb = colorsys.hsv_to_rgb(
                     (h0 + 0.18 * math.sin(simdi * 3 + z * 0.9)) % 1.0, 1.0, 1.0)
-                ekle(z, (rr * 255, gg * 255, bb * 255), zarf * yayil * (0.35 + 0.65 * alan))
+                koy(z, (rr * 255, gg * 255, bb * 255), zarf * yayil * (0.35 + 0.65 * alan))
         elif efekt == "neon":
             rnd = random.Random(int(basla * 1e6))
             # titreme: (baslangic, bitis) yanik araliklari, sonra kararli yanar
@@ -568,7 +581,7 @@ def kare_hesapla(aktif, simdi, ayar):
                 v = math.exp(-kararli / (omur * 1.4)) * (0.92 + 0.08 * math.sin(simdi * 90))
                 for z in range(n):
                     m = abs((z + 0.5) - merkez)
-                    ekle(z, renk, v * max(0.0, min(1.0, 1.5 - m / max(0.6, kalinlik * 0.8))))
+                    koy(z, renk, v * max(0.0, min(1.0, 1.5 - m / max(0.6, kalinlik * 0.8))))
         elif efekt == "domino":
             adim = 1.0 / max(0.5, hiz) * 1.6
             zi = int(merkez)
@@ -578,7 +591,7 @@ def kare_hesapla(aktif, simdi, ayar):
                 if d < 0:
                     continue
                 v = 1.0 if d < 0.1 else math.exp(-(d - 0.1) / (omur * 0.7))
-                ekle(z, renk, v)
+                koy(z, renk, v)
         else:  # dalga
             sonum = math.exp(-yas / omur)
             for z in range(n):
@@ -587,6 +600,10 @@ def kare_hesapla(aktif, simdi, ayar):
                 if yas < 0.08 and m < 0.8:  # basilan yer ilk anda parlasin
                     s = 1.0
                 ekle(z, renk, s * sonum)
+
+    for z, (v, renk) in enumerate(en_guclu):
+        if v > 0:
+            ekle(z, renk, min(1.0, v))
 
     return tuple(
         (min(255, int(c[0])), min(255, int(c[1])), min(255, int(c[2]))) for c in toplam
