@@ -249,6 +249,11 @@ EFEKTLER = [
     ("konfeti", "Konfeti", "Klavyenin rastgele yerlerinde rengârenk ışıklar çakar"),
     ("yagmur", "Dijital yağmur", "Yeşil kod damlaları klavyede titreşerek söner (kendi rengi)"),
     ("seviye", "Seviye", "Yazdıkça soldan sağa dolan hız göstergesi: yeşil, sarı, kırmızı"),
+    ("kuzey", "Kuzey ışıkları", "Yeşilden mora süzülen yumuşak, dalgalı ışık perdesi (kendi renkleri)"),
+    ("golge", "Gölge", "Klavye hep yanar; bastığın yer bir an kararır ve yavaşça geri gelir"),
+    ("plazma", "Plazma", "Basılan yerden dalgalanarak yayılan, renk değiştiren akışkan ışık"),
+    ("neon", "Neon", "Neon lamba gibi titreyerek yanar, bir süre parlar, sonra söner"),
+    ("domino", "Domino", "Bölgeler tek tek, sırayla yanıp söner"),
 ]
 EFEKT_ADLARI = [e[0] for e in EFEKTLER]
 
@@ -311,6 +316,16 @@ def omur_sure(ayar):
         return 1.4
     if e == "seviye":
         return 5.0
+    if e == "kuzey":
+        return 3.2
+    if e == "golge":
+        return omur * 4
+    if e == "plazma":
+        return omur * 5
+    if e == "neon":
+        return 0.25 + omur * 3
+    if e == "domino":
+        return BOLGE_SAYISI / hiz + omur * 3
     return omur * 2.5
 
 
@@ -319,7 +334,7 @@ def kapasite(ayar):
     e = ayar.get("efekt", "dalga")
     if e in ("isi", "seviye"):
         return 60
-    if e in ("kivilcim", "ates", "konfeti", "yagmur"):
+    if e in ("kivilcim", "ates", "konfeti", "yagmur", "golge", "plazma", "kuzey"):
         return 16
     return max(1, int(ayar["max_dalga"]))
 
@@ -361,6 +376,26 @@ def kare_hesapla(aktif, simdi, ayar):
             dolu = max(0.0, min(1.0, seviye - z))
             if dolu > 0:
                 ekle(z, _isi_rengi(z / (n - 1), SEVIYE_RENKLERI), dolu)
+        aktif = ()
+
+    if efekt == "golge":
+        # zemin: sabit renk ya da yavasca akan gokkusagi; basislar "delik" acar
+        delik = [0.0] * n
+        for merkez, basla, _ in aktif:
+            yas = simdi - basla
+            if yas < 0:
+                continue
+            sonum = math.exp(-yas / (omur * 1.3))
+            for z in range(n):
+                m = (z + 0.5) - merkez
+                delik[z] += sonum * math.exp(-(m * m) / (2 * (0.7 * kalinlik) ** 2))
+        for z in range(n):
+            if ayar["mod"] == "sabit":
+                taban = hex_rgb(ayar["renk"])
+            else:
+                rr, gg, bb = colorsys.hsv_to_rgb((simdi * 0.04 + z / n) % 1.0, 1.0, 1.0)
+                taban = (rr * 255, gg * 255, bb * 255)
+            ekle(z, taban, 0.6 * max(0.0, 1.0 - delik[z]))
         aktif = ()
 
     if efekt == "ates":
@@ -499,6 +534,51 @@ def kare_hesapla(aktif, simdi, ayar):
                     bas = 1.0 if y < 0.05 else 0.0  # damlanin basi beyazimsi parlasin
                     ekle(z, tuple(c + (255 - c) * 0.6 * bas for c in yesil),
                          math.exp(-y / 0.35) * titre)
+        elif efekt == "kuzey":
+            tohum = (basla * 1000) % 50
+            zarf = min(1.0, yas / 0.25) * math.exp(-yas / 1.1)
+            orta = merkez + math.sin(yas * 1.8 + tohum) * 1.2  # perde suzulur
+            genis = kalinlik * 1.4 + yas * hiz * 0.25
+            for z in range(n):
+                m = (z + 0.5) - orta
+                v = zarf * math.exp(-(m * m) / (2 * genis * genis))
+                ton = 0.33 + 0.45 * (0.5 + 0.5 * math.sin(simdi * 1.3 + z * 0.6 + tohum))
+                rr, gg, bb = colorsys.hsv_to_rgb(ton, 0.9, 1.0)
+                ekle(z, (rr * 255, gg * 255, bb * 255), v)
+        elif efekt == "plazma":
+            h0 = colorsys.rgb_to_hsv(*(c / 255.0 for c in renk))[0]
+            tohum = (basla * 1000) % 50
+            zarf = math.exp(-yas / (omur * 1.6)) * min(1.0, yas / 0.05)
+            for z in range(n):
+                m = (z + 0.5) - merkez
+                yayil = math.exp(-(m * m) / (2 * (kalinlik * 1.2 + yas * hiz * 0.5) ** 2))
+                alan = (0.5 + 0.5 * math.sin(z * 1.3 - simdi * 6 + tohum)) * \
+                       (0.6 + 0.4 * math.sin(z * 0.7 + simdi * 4))
+                rr, gg, bb = colorsys.hsv_to_rgb(
+                    (h0 + 0.18 * math.sin(simdi * 3 + z * 0.9)) % 1.0, 1.0, 1.0)
+                ekle(z, (rr * 255, gg * 255, bb * 255), zarf * yayil * (0.35 + 0.65 * alan))
+        elif efekt == "neon":
+            rnd = random.Random(int(basla * 1e6))
+            # titreme: (baslangic, bitis) yanik araliklari, sonra kararli yanar
+            araliklar = ((0.0, 0.04), (0.08 + rnd.random() * 0.03, 0.12 + rnd.random() * 0.02),
+                         (0.17 + rnd.random() * 0.03, 99))
+            yanik = any(a <= yas < b for a, b in araliklar)
+            if yanik:
+                kararli = max(0.0, yas - 0.2)
+                v = math.exp(-kararli / (omur * 1.4)) * (0.92 + 0.08 * math.sin(simdi * 90))
+                for z in range(n):
+                    m = abs((z + 0.5) - merkez)
+                    ekle(z, renk, v * max(0.0, min(1.0, 1.5 - m / max(0.6, kalinlik * 0.8))))
+        elif efekt == "domino":
+            adim = 1.0 / max(0.5, hiz) * 1.6
+            zi = int(merkez)
+            for z in range(n):
+                t = abs(z - zi) * adim
+                d = yas - t
+                if d < 0:
+                    continue
+                v = 1.0 if d < 0.1 else math.exp(-(d - 0.1) / (omur * 0.7))
+                ekle(z, renk, v)
         else:  # dalga
             sonum = math.exp(-yas / omur)
             for z in range(n):
