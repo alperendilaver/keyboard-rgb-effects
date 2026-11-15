@@ -1,98 +1,114 @@
 """
 gg.py - SteelSeries GG ile uyum.
 
-Dalga calisirken GG'nin kendi isik efektini klavyeye yazmasini durdurur,
-Dalga durunca GG'deki secili isik profilini geri getirir.
+Sorun: GG'nin isik motoru (SteelSeriesEngine + SteelSeriesPrism) klavyeye
+surekli kendi rengini yazar, Dalga'nin renkleriyle karisir.
 
-Nasil: GG'nin yerel GameSense sunucusuna (sadece 127.0.0.1) "DALGA" adinda bir
-oyun tanitir. Oyun aktifken GG profil efektini askiya alir ve klavyeyi oyuna
-birakir; oyun durdurulunca profil geri yuklenir. GG'nin kendisi (Sonar vb.)
-kapatilmaz. pip install GEREKMEZ.
+Cozum: Dalga calisirken bu iki sureci DONDURUR (suspend), durunca kaldigi
+yerden DEVAM ETTIRIR (resume). GG'nin geri kalani (Sonar, arayuz vb.) hic
+etkilenmez; Engine devam edince GG'deki isik profili kendiliginden geri gelir.
+
+Dalga cokerse diye dondurulan surecler bir dosyaya yazilir; Dalga bir sonraki
+acilista onlari otomatik devam ettirir. (GG'yi yeniden baslatmak da duzeltir.)
+Sadece Windows'un kendi DLL'leri kullanilir, pip install GEREKMEZ.
 """
 
+import atexit
+import ctypes
 import json
 import os
-import threading
-import urllib.request
+import subprocess
 
-OYUN = "DALGA"
-OLAY = "AKTIF"
-CORE = os.path.join(os.environ.get("PROGRAMDATA", r"C:\ProgramData"),
-                    "SteelSeries", "SteelSeries Engine 3", "coreProps.json")
+HEDEFLER = ("SteelSeriesEngine.exe", "SteelSeriesPrism.exe")
+KAYIT = os.path.join(os.environ.get("TEMP", "."), "dalga_gg_donuk.json")
+PROCESS_SUSPEND_RESUME = 0x0800
+
+_ntdll = ctypes.WinDLL("ntdll")
+_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_k32.OpenProcess.restype = ctypes.c_void_p
+_k32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+_k32.CloseHandle.argtypes = [ctypes.c_void_p]
+_ntdll.NtSuspendProcess.argtypes = [ctypes.c_void_p]
+_ntdll.NtResumeProcess.argtypes = [ctypes.c_void_p]
 
 
-def _adres():
+def _pidler(ad):
     try:
-        with open(CORE, "r", encoding="utf-8") as f:
-            return json.load(f)["address"]
+        cikti = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq " + ad, "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, creationflags=0x08000000).stdout
     except Exception:
-        return None
+        return []
+    sonuc = []
+    for satir in cikti.splitlines():
+        parca = satir.strip().strip('"').split('","')
+        if len(parca) > 1 and parca[0].lower() == ad.lower():
+            try:
+                sonuc.append(int(parca[1]))
+            except ValueError:
+                pass
+    return sonuc
 
 
-def _post(adres, yol, veri):
-    istek = urllib.request.Request(
-        "http://%s/%s" % (adres, yol), data=json.dumps(veri).encode(),
-        headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(istek, timeout=3) as r:
-        r.read()
+def _uygula(pid, dondur):
+    h = _k32.OpenProcess(PROCESS_SUSPEND_RESUME, False, pid)
+    if not h:
+        return False
+    try:
+        fn = _ntdll.NtSuspendProcess if dondur else _ntdll.NtResumeProcess
+        return fn(h) == 0
+    finally:
+        _k32.CloseHandle(h)
+
+
+def _kaydi_yaz(pidler):
+    try:
+        if pidler:
+            with open(KAYIT, "w") as f:
+                json.dump(pidler, f)
+        elif os.path.exists(KAYIT):
+            os.remove(KAYIT)
+    except Exception:
+        pass
+
+
+def artiklari_coz():
+    """Onceki bir Dalga oturumu cokup Engine'i donuk biraktiysa devam ettirir."""
+    try:
+        with open(KAYIT) as f:
+            eski = json.load(f)
+    except Exception:
+        return
+    canli = {p for ad in HEDEFLER for p in _pidler(ad)}
+    for pid in eski:
+        if pid in canli:
+            _uygula(pid, False)
+    _kaydi_yaz([])
 
 
 class GG:
     def __init__(self):
-        self.adres = None
-        self._dur = threading.Event()
-        self._thread = None
-        self._sayac = 0
+        self.donuk = []
+        artiklari_coz()
+        atexit.register(self.birak)
+
+    def calisiyor_mu(self):
+        return bool(_pidler(HEDEFLER[0]))
 
     def devral(self):
-        """GG'nin klavye isiklarini duraklatir. GG yoksa False (sorun degil)."""
-        self.adres = _adres()
-        if not self.adres:
-            return False
-        try:
-            _post(self.adres, "game_metadata", {
-                "game": OYUN, "game_display_name": "Dalga", "developer": "dalga",
-                "deinitialize_timer_length_ms": 60000})
-            _post(self.adres, "bind_game_event", {
-                "game": OYUN, "event": OLAY, "min_value": 0, "max_value": 100,
-                "value_optional": True,
-                "handlers": [{"device-type": "keyboard", "zone": "all", "mode": "color",
-                              "color": {"red": 0, "green": 0, "blue": 0}}]})
-            self._olay()
-        except Exception:
-            self.adres = None
-            return False
-        self._dur.clear()
-        self._thread = threading.Thread(target=self._nabiz, daemon=True)
-        self._thread.start()
-        return True
-
-    def _olay(self):
-        # deger her seferinde degissin ki GG olayi tekrar sayip zaman asimini sifirlasin
-        self._sayac = (self._sayac + 1) % 100
-        _post(self.adres, "game_event", {"game": OYUN, "event": OLAY,
-                                         "data": {"value": self._sayac}})
-
-    def _nabiz(self):
-        while not self._dur.wait(10):
-            try:
-                _post(self.adres, "game_heartbeat", {"game": OYUN})
-            except Exception:
-                pass
+        """GG isik motorunu dondurur. GG kapaliysa False (sorun degil)."""
+        if self.donuk:
+            return True
+        for ad in HEDEFLER:
+            for pid in _pidler(ad):
+                if _uygula(pid, True):
+                    self.donuk.append(pid)
+        _kaydi_yaz(self.donuk)
+        return bool(self.donuk)
 
     def birak(self):
-        """GG'deki secili isik profilini geri getirir."""
-        self._dur.set()
-        if self._thread is not None:
-            self._thread.join(timeout=1)
-            self._thread = None
-        adres = self.adres or _adres()
-        self.adres = None
-        if not adres:
-            return False
-        try:
-            _post(adres, "stop_game", {"game": OYUN})
-            _post(adres, "remove_game", {"game": OYUN})
-            return True
-        except Exception:
-            return False
+        """Dondurulan surecleri devam ettirir; GG isiklari geri gelir."""
+        for pid in reversed(self.donuk):
+            _uygula(pid, False)
+        self.donuk = []
+        _kaydi_yaz([])
