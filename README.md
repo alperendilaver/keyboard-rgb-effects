@@ -1,12 +1,12 @@
 <div align="center">
 
-# Dalga
+# Keyglow
 
 **SteelSeries Apex 3 TKL için tuşa bastıkça yayılan RGB ışık efektleri**
 
 20 efekt · canlı klavye önizlemesi · otomatik efekt değişimi · SteelSeries GG ile uyumlu
 
-![Dalga ana ekranı](docs/ekran-ana.png)
+![Keyglow ana ekranı](docs/ekran-ana.png)
 
 </div>
 
@@ -32,7 +32,7 @@
 - **Efekt galerisi:** Listedeki her efektin yanında o efekti sürekli oynatan küçük bir önizleme vardır.
 - **Bekleme ışığı:** Tuşa basılmadığında yanan ışık için dört mod: Sabit, Renk döngüsü, Akan gökkuşağı ve Nefes. Nefes modu seçili renkle, renk döngüsüyle ya da gökkuşağıyla çalışabilir. Hız ve parlaklık ayarlanabilir.
 - **Otomatik değişim:** Efekt, belirlediğin aralıkta (1-60 dakika) rastgele başka bir efekte geçer.
-- **SteelSeries GG uyumu:** Dalga çalışırken GG'nin kendi ışıkları duraklatılır, durunca GG profilin geri gelir. GG'yi kapatman gerekmez.
+- **SteelSeries GG uyumu:** Keyglow çalışırken GG'nin kendi ışıkları duraklatılır, durunca GG profilin geri gelir. GG'yi kapatman gerekmez.
 - **Kurulum gerektirmeyen sürücü:** Klavyeyle Windows'un kendi HID arayüzü üzerinden konuşur. Ek sürücü ya da SteelSeries yazılımı gerekmez.
 - **Ayarlar otomatik kaydedilir** ve program açılınca kaldığın yerden devam eder.
 
@@ -85,8 +85,8 @@ Hız, Kalınlık ve Parlaklık ayarları her efekte uygulanır. Renk modu "Gökk
 **Adımlar**
 
 ```bash
-git clone https://github.com/alperendilaver/dalga.git
-cd dalga
+git clone https://github.com/alperendilaver/keyboard-rgb-effects.git
+cd keyboard-rgb-effects
 pip install keyboard pywebview
 ```
 
@@ -109,13 +109,13 @@ pywebview kurulu değilse ya da `py dalga.py --klasik` ile başlatırsan, daha s
 
 ## SteelSeries GG ile birlikte kullanım
 
-GG açıkken klavyeye sürekli kendi ışık efektini gönderir ve bu, Dalga'nın renkleriyle karışır. Bunu önlemek için Dalga çalışırken GG'nin ışık motorunu (`SteelSeriesEngine.exe` ve `SteelSeriesPrism.exe`) geçici olarak **dondurur**, durunca kaldığı yerden **devam ettirir**:
+GG açıkken klavyeye sürekli kendi ışık efektini gönderir ve bu, Keyglow'un renkleriyle karışır. Bunu önlemek için Keyglow çalışırken GG'nin ışık motorunu (`SteelSeriesEngine.exe` ve `SteelSeriesPrism.exe`) geçici olarak **dondurur**, durunca kaldığı yerden **devam ettirir**:
 
 - GG'nin geri kalanı (Sonar, arayüz vb.) etkilenmez.
 - Durdurduğunda GG profilin kendiliğinden geri gelir.
-- Dalga beklenmedik şekilde kapanırsa, bir sonraki açılışta donuk kalan süreçler otomatik olarak devam ettirilir. GG'yi yeniden başlatmak da sorunu çözer.
+- Keyglow beklenmedik şekilde kapanırsa, bir sonraki açılışta donuk kalan süreçler otomatik olarak devam ettirilir. GG'yi yeniden başlatmak da sorunu çözer.
 
-Bu davranışı sağ paneldeki **SteelSeries GG** anahtarıyla kapatabilirsin. OpenRGB gibi başka bir RGB yazılımı kullanıyorsan Dalga'yı çalıştırmadan önce onu kapat.
+Bu davranışı sağ paneldeki **SteelSeries GG** anahtarıyla kapatabilirsin. OpenRGB gibi başka bir RGB yazılımı kullanıyorsan Keyglow'u çalıştırmadan önce onu kapat.
 
 ## Nasıl çalışır
 
@@ -158,7 +158,7 @@ Bu davranışı sağ paneldeki **SteelSeries GG** anahtarıyla kapatabilirsin. O
 
 ## Teşekkür
 
-Bu proje, **[savcizz](https://github.com/savcizz)** tarafından yazılan [savcizz/dalga](https://github.com/savcizz/dalga) reposunun bir fork'udur. Apex 3 TKL ile doğrudan HID iletişimi, bölge tabanlı dalga efekti ve ilk arayüz orijinal projeye aittir. Bu fork onların üzerine yeni efektler, modern bir arayüz, SteelSeries GG uyumu ve otomatik efekt değişimi ekler.
+Keyglow, **[savcizz](https://github.com/savcizz)** tarafından yazılan **Dalga** projesinin ([savcizz/dalga](https://github.com/savcizz/dalga)) bir fork'udur. Proje dosyalarının adlarında hâlâ bu orijinal ad (`dalga.py` gibi) kullanılıyor. Apex 3 TKL ile doğrudan HID iletişimi, bölge tabanlı dalga efekti ve ilk arayüz orijinal projeye aittir. Bu fork onların üzerine yeni efektler, modern bir arayüz, SteelSeries GG uyumu ve otomatik efekt değişimi ekler.
 
 Orijinal yazara Instagram'dan da ulaşabilirsin: [@savcizz](https://instagram.com/savcizz)
 

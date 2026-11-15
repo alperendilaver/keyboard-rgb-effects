@@ -196,7 +196,7 @@ class Api:
 def main():
     api = Api()
     pencere = webview.create_window(
-        "Dalga", HTML, js_api=api, width=1240, height=780, min_size=(1100, 700),
+        "Keyglow", HTML, js_api=api, width=1240, height=780, min_size=(1100, 700),
         frameless=True, easy_drag=False, background_color="#0b0b0d")
     api._pencere = pencere
     pencere.events.loaded += api._baslat_dongu

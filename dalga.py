@@ -1048,7 +1048,7 @@ class Uygulama:
         self._kayit_zamanlayici = None
         self.deneme = []  # onizlemedeki deneme dalgalari
 
-        root.title("Dalga")
+        root.title("Keyglow")
         root.configure(bg=BG)
         root.resizable(False, False)
 
@@ -1058,7 +1058,7 @@ class Uygulama:
         # --- baslik ---
         ust = tk.Frame(govde, bg=BG)
         ust.pack(fill="x")
-        tk.Label(ust, text="Dalga", font=font(18, True), fg=FG, bg=BG).pack(side="left")
+        tk.Label(ust, text="Keyglow", font=font(18, True), fg=FG, bg=BG).pack(side="left")
         tk.Label(ust, text=SURUM, font=font(9), fg=PASIF, bg=BG).pack(
             side="left", padx=(px(8), 0), pady=(px(8), 0))
         self.durum = tk.Label(ust, text="Durdu", font=font(9), fg=SOLUK, bg=BG)
