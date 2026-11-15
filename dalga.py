@@ -46,7 +46,7 @@ VARSAYILAN = {
     "renk": "#00d4ff",          # sabit mod rengi
     "efekt": "dalga",           # EFEKTLER listesinden biri
     "bekleme_acik": False,      # bekleme isigi acik mi
-    "bekleme_mod": "sabit",     # "sabit" ya da "gokkusagi"
+    "bekleme_mod": "sabit",     # BEKLEME_MODLARI listesinden biri
     "bekleme_renk": "#3b1fa3",  # bekleme isigi rengi
     "bekleme_parlaklik": 35,    # bekleme isigi parlakligi, yuzde 1-100
     "gg_geri": True,            # calisirken GG isiklarini duraklat, durunca geri getir
@@ -76,9 +76,12 @@ def ayar_temizle(ayar):
     for k in ("renk", "bekleme_renk"):
         if not (isinstance(ayar[k], str) and HEX.match(ayar[k])):
             ayar[k] = VARSAYILAN[k]
-    for k in ("mod", "bekleme_mod"):
-        if ayar[k] not in ("gokkusagi", "sabit"):
-            ayar[k] = VARSAYILAN[k]
+    if ayar["mod"] not in ("gokkusagi", "sabit"):
+        ayar["mod"] = VARSAYILAN["mod"]
+    if ayar["bekleme_mod"] == "gokkusagi":  # eski surumden kalan ad
+        ayar["bekleme_mod"] = "dongu"
+    if ayar["bekleme_mod"] not in [m[0] for m in BEKLEME_MODLARI]:
+        ayar["bekleme_mod"] = VARSAYILAN["bekleme_mod"]
     if ayar["efekt"] not in EFEKT_ADLARI:
         ayar["efekt"] = VARSAYILAN["efekt"]
     ayar["bekleme_acik"] = bool(ayar["bekleme_acik"])
@@ -164,20 +167,37 @@ def bolge_bul(scan_code):
     return min(max(oran * BOLGE_SAYISI, 0), BOLGE_SAYISI - 1e-6)
 
 
+# (anahtar, ad, renk secilebilir mi)
+BEKLEME_MODLARI = [
+    ("sabit", "Sabit", True),
+    ("dongu", "Renk döngüsü", False),
+    ("akis", "Akan gökkuşağı", False),
+    ("nefes", "Nefes", True),
+]
+
+
 def bekleme_renkleri(ayar, simdi):
     """Bekleme isigi: her bolge icin (R,G,B) float. Kapaliysa siyah."""
     n = BOLGE_SAYISI
     if not ayar.get("bekleme_acik"):
         return [(0.0, 0.0, 0.0)] * n
     k = max(0.0, min(1.0, float(ayar["bekleme_parlaklik"]) / 100.0))
-    if ayar.get("bekleme_mod") == "gokkusagi":
-        # klavye boyunca yavasca akan gokkusagi
+    mod = ayar.get("bekleme_mod")
+    if mod == "dongu":
+        # butun klavye birlikte, yavasca renk degistirir (~20 sn'de bir tur)
+        r, g, b = colorsys.hsv_to_rgb((simdi * 0.05) % 1.0, 1.0, 1.0)
+        return [(r * 255 * k, g * 255 * k, b * 255 * k)] * n
+    if mod == "akis":
+        # klavye boyunca akan gokkusagi
         sonuc = []
         for z in range(n):
             r, g, b = colorsys.hsv_to_rgb((simdi * 0.08 + z / n) % 1.0, 1.0, 1.0)
             sonuc.append((r * 255 * k, g * 255 * k, b * 255 * k))
         return sonuc
     r, g, b = hex_rgb(ayar["bekleme_renk"])
+    if mod == "nefes":
+        # 4 saniyede bir yavasca dolup bosalan isik
+        k *= 0.12 + 0.88 * (0.5 - 0.5 * math.cos(2 * math.pi * simdi / 4.0))
     return [(r * k, g * k, b * k)] * n
 
 
@@ -186,10 +206,14 @@ def bekleme_renkleri(ayar, simdi):
 EFEKTLER = [
     ("dalga", "Dalga", "Basılan yerden iki yana yayılan halka"),
     ("yanki", "Yankı", "Halka üç kez, giderek sönerek tekrarlanır"),
-    ("yildiz", "Kuyruklu yıldız", "Işık klavyenin öbür ucuna kuyruğuyla kayar"),
+    ("yildiz", "Yıldız", "Işık klavyenin öbür ucuna kuyruğuyla kayar"),
     ("nabiz", "Nabız", "Bütün klavye bir an parlayıp söner"),
     ("kivilcim", "Kıvılcım", "Basılan yerin çevresinde rastgele çakan kıvılcımlar"),
-    ("isi", "Isı haritası", "Hızlı yazdıkça ısınır: maviden kırmızıya, sonra beyaza"),
+    ("isi", "Isı", "Hızlı yazdıkça ısınır: maviden kırmızıya, sonra beyaza (kendi renkleri)"),
+    ("simsek", "Şimşek", "Bütün klavye şimşek gibi iki üç kez çakar"),
+    ("ates", "Ateş", "Basılan yerde titreyen alevler yanar (kendi renkleri)"),
+    ("carpisma", "Çarpışma", "İki ışık iki kenardan gelir, basılan yerde çarpışıp patlar"),
+    ("patlama", "Patlama", "Gökkuşağı renklerinde yayılan halka"),
 ]
 EFEKT_ADLARI = [e[0] for e in EFEKTLER]
 
@@ -200,13 +224,19 @@ ISI_RENKLERI = [  # soguktan sicaga
 ]
 
 
-def _isi_rengi(t):
+ATES_RENKLERI = [
+    (0.00, (0, 0, 0)), (0.25, (120, 0, 0)), (0.50, (255, 40, 0)),
+    (0.75, (255, 140, 0)), (1.00, (255, 230, 90)),
+]
+
+
+def _isi_rengi(t, palet=ISI_RENKLERI):
     t = max(0.0, min(1.0, t))
-    for (t1, c1), (t2, c2) in zip(ISI_RENKLERI, ISI_RENKLERI[1:]):
+    for (t1, c1), (t2, c2) in zip(palet, palet[1:]):
         if t <= t2:
             f = (t - t1) / (t2 - t1)
             return tuple(c1[i] + (c2[i] - c1[i]) * f for i in range(3))
-    return ISI_RENKLERI[-1][1]
+    return palet[-1][1]
 
 
 def _halka(mesafe, yaricap, kalinlik):
@@ -226,6 +256,12 @@ def omur_sure(ayar):
         return 0.7
     if e == "isi":
         return 4.5
+    if e == "simsek":
+        return 0.6
+    if e == "ates":
+        return 1.6
+    if e == "carpisma":
+        return BOLGE_SAYISI / hiz + omur * 2.5
     return omur * 2.5
 
 
@@ -234,7 +270,7 @@ def kapasite(ayar):
     e = ayar.get("efekt", "dalga")
     if e == "isi":
         return 60
-    if e == "kivilcim":
+    if e in ("kivilcim", "ates"):
         return 16
     return max(1, int(ayar["max_dalga"]))
 
@@ -264,6 +300,25 @@ def kare_hesapla(aktif, simdi, ayar):
                 enerji[z] += sonum * math.exp(-(m * m) / (2 * (0.6 * kalinlik) ** 2))
         for z in range(n):
             ekle(z, _isi_rengi(enerji[z] / 9.0), 1.0)
+        aktif = ()
+
+    if efekt == "ates":
+        isi = [0.0] * n
+        for merkez, basla, _ in aktif:
+            yas = simdi - basla
+            if yas < 0:
+                continue
+            atak = min(1.0, yas / 0.05)
+            sonum = math.exp(-yas / 0.55) * atak
+            tohum = (basla * 1000) % 97
+            for z in range(n):
+                m = (z + 0.5) - merkez
+                yayil = math.exp(-(m * m) / (2 * (0.5 * kalinlik + yas * 0.8) ** 2))
+                titre = 0.6 + 0.4 * (0.5 + 0.25 * (math.sin(simdi * 23 + z * 7.1 + tohum)
+                                                   + math.sin(simdi * 37 + z * 3.3)))
+                isi[z] += sonum * yayil * titre
+        for z in range(n):
+            ekle(z, _isi_rengi(min(1.0, isi[z]), ATES_RENKLERI), 1.0)
         aktif = ()
 
     for merkez, basla, renk in aktif:
@@ -302,6 +357,47 @@ def kare_hesapla(aktif, simdi, ayar):
                 y = yas - rnd.random() * 0.3
                 if 0 <= y < 0.3:
                     ekle(z, renk, 1.0 - y / 0.3)
+        elif efekt == "simsek":
+            rnd = random.Random(int(basla * 1e6))
+            beyaz = tuple(c + (255 - c) * 0.45 for c in renk)
+            cakmalar = ((0.0, 1.0), (0.07 + rnd.random() * 0.04, 0.55),
+                        (0.17 + rnd.random() * 0.08, 0.85))
+            v = 0.0
+            for t, guc in cakmalar:
+                d = yas - t
+                if 0 <= d < 0.06:
+                    v = max(v, guc * (1.0 - d / 0.12))
+            v = max(v, 0.25 * math.exp(-yas / 0.15))  # kisa art isik
+            for z in range(n):
+                ekle(z, beyaz, v)
+        elif efekt == "carpisma":
+            # iki isik da basilan yere AYNI ANDA varsin (yakindaki daha yavas gelir)
+            bulusma = max(merkez, n - merkez) / hiz
+            f = min(1.0, yas / bulusma)
+            sol = merkez * f                # soldan gelen
+            sag = n - (n - merkez) * f      # sagdan gelen
+            for z in range(n):
+                x = z + 0.5
+                v = 0.0
+                if f < 1.0:
+                    v = max(0.0, 1.0 - abs(x - sol) / 0.8, 1.0 - abs(x - sag) / 0.8)
+                d = yas - bulusma
+                if d >= 0:
+                    s = _halka(abs(x - merkez), d * hiz * 1.3, kalinlik)
+                    if d < 0.08 and abs(x - merkez) < 1.0:
+                        s = 1.0
+                    v = max(v, s * math.exp(-d / omur))
+                ekle(z, renk, max(0.0, v))
+        elif efekt == "patlama":
+            h0 = colorsys.rgb_to_hsv(*(c / 255.0 for c in renk))[0]
+            sonum = math.exp(-yas / omur)
+            for z in range(n):
+                m = abs((z + 0.5) - merkez)
+                s = _halka(m, yas * hiz, kalinlik)
+                if yas < 0.08 and m < 0.8:
+                    s = 1.0
+                r, g, b = colorsys.hsv_to_rgb((h0 + m * 0.11) % 1.0, 1.0, 1.0)
+                ekle(z, (r * 255, g * 255, b * 255), s * sonum)
         else:  # dalga
             sonum = math.exp(-yas / omur)
             for z in range(n):
@@ -775,7 +871,7 @@ class Uygulama:
 
         self._bolum("Efekt")
         self.secim = Secim(self.liste, [(e[1], e[0]) for e in EFEKTLER],
-                           self.ayar["efekt"], self._efekt_degisti, BG)
+                           self.ayar["efekt"], self._efekt_degisti, BG, sutun=5)
         self.secim.pack(fill="x", pady=(px(10), 0))
         self.efekt_aciklama = tk.Label(self.liste, text="", font=font(9), fg=SOLUK, bg=BG,
                                        anchor="w")
@@ -796,13 +892,12 @@ class Uygulama:
         sag = self._satir("Açık")
         self.bek_anahtar = Anahtar(sag, self.ayar["bekleme_acik"], self._bek_ac, BG)
         self.bek_anahtar.pack(side="right")
-        sag = self._satir("Mod")
+        self.bek_secim = Secim(self.liste, [(m[1], m[0]) for m in BEKLEME_MODLARI],
+                               self.ayar["bekleme_mod"], self._bek_mod_degisti, BG, sutun=4)
+        self.bek_secim.pack(fill="x", pady=(px(10), 0))
+        sag = self._satir("Renk")
         self.bek_ornek = Ornek(sag, self.ayar["bekleme_renk"], self._bek_renk_sec, BG)
         self.bek_ornek.pack(side="right")
-        self.bek_segment = Segment(sag, [("Sabit", "sabit"), ("Gökkuşağı", "gokkusagi")],
-                                   self.ayar["bekleme_mod"], self._bek_mod_degisti, BG,
-                                   genislik=180)
-        self.bek_segment.pack(side="right", padx=(0, px(10)))
         self.bek_slider = self._kaydirici("Parlaklık", "bekleme_parlaklik", 1, 100, 1,
                                           lambda v: f"{int(v)}%", True)
 
@@ -854,8 +949,9 @@ class Uygulama:
         self.ornek.renk = self.ayar["renk"]
         self.ornek.ciz()
         acik = self.ayar["bekleme_acik"]
+        renkli = next(m[2] for m in BEKLEME_MODLARI if m[0] == self.ayar["bekleme_mod"])
         self.bek_ornek.aktif = acik
-        self.bek_ornek.gokkusagi = self.ayar["bekleme_mod"] == "gokkusagi"
+        self.bek_ornek.gokkusagi = not renkli
         self.efekt_aciklama.config(
             text=next(e[2] for e in EFEKTLER if e[0] == self.ayar["efekt"]))
         self.bek_ornek.renk = self.ayar["bekleme_renk"]
