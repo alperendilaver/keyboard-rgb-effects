@@ -264,8 +264,8 @@ SEVIYE_RENKLERI = [
 ]
 
 ATES_RENKLERI = [
-    (0.00, (0, 0, 0)), (0.25, (120, 0, 0)), (0.50, (255, 40, 0)),
-    (0.75, (255, 140, 0)), (1.00, (255, 230, 90)),
+    (0.00, (0, 0, 0)), (0.30, (150, 0, 0)), (0.60, (255, 35, 0)),
+    (0.85, (255, 110, 0)), (1.00, (255, 175, 0)),  # beyaza kacmasin, doygun kalsin
 ]
 
 
@@ -379,7 +379,8 @@ def kare_hesapla(aktif, simdi, ayar):
                                                    + math.sin(simdi * 37 + z * 3.3)))
                 isi[z] += sonum * yayil * titre
         for z in range(n):
-            ekle(z, _isi_rengi(min(1.0, isi[z]), ATES_RENKLERI), 1.0)
+            # ust uste basinca yavasca doysun (1'i hic gecmez)
+            ekle(z, _isi_rengi(1.0 - math.exp(-1.4 * isi[z]), ATES_RENKLERI), 1.0)
         aktif = ()
 
     for merkez, basla, renk in aktif:
