@@ -16,6 +16,7 @@ import colorsys
 import json
 import math
 import os
+import random
 import re
 import threading
 import time
@@ -43,7 +44,9 @@ VARSAYILAN = {
     "parlaklik": 100,           # dalga parlakligi, yuzde 5-100
     "mod": "gokkusagi",         # "gokkusagi" ya da "sabit"
     "renk": "#00d4ff",          # sabit mod rengi
+    "efekt": "dalga",           # EFEKTLER listesinden biri
     "bekleme_acik": False,      # bekleme isigi acik mi
+    "bekleme_mod": "sabit",     # "sabit" ya da "gokkusagi"
     "bekleme_renk": "#3b1fa3",  # bekleme isigi rengi
     "bekleme_parlaklik": 35,    # bekleme isigi parlakligi, yuzde 1-100
     "gg_geri": True,            # calisirken GG isiklarini duraklat, durunca geri getir
@@ -73,8 +76,11 @@ def ayar_temizle(ayar):
     for k in ("renk", "bekleme_renk"):
         if not (isinstance(ayar[k], str) and HEX.match(ayar[k])):
             ayar[k] = VARSAYILAN[k]
-    if ayar["mod"] not in ("gokkusagi", "sabit"):
-        ayar["mod"] = VARSAYILAN["mod"]
+    for k in ("mod", "bekleme_mod"):
+        if ayar[k] not in ("gokkusagi", "sabit"):
+            ayar[k] = VARSAYILAN[k]
+    if ayar["efekt"] not in EFEKT_ADLARI:
+        ayar["efekt"] = VARSAYILAN["efekt"]
     ayar["bekleme_acik"] = bool(ayar["bekleme_acik"])
     ayar["gg_geri"] = bool(ayar["gg_geri"])
     return ayar
@@ -158,38 +164,153 @@ def bolge_bul(scan_code):
     return min(max(oran * BOLGE_SAYISI, 0), BOLGE_SAYISI - 1e-6)
 
 
-def bekleme_rengi(ayar):
-    """Bekleme isigi aciksa (R,G,B) float, kapaliysa siyah."""
+def bekleme_renkleri(ayar, simdi):
+    """Bekleme isigi: her bolge icin (R,G,B) float. Kapaliysa siyah."""
+    n = BOLGE_SAYISI
     if not ayar.get("bekleme_acik"):
-        return (0.0, 0.0, 0.0)
-    r, g, b = hex_rgb(ayar["bekleme_renk"])
+        return [(0.0, 0.0, 0.0)] * n
     k = max(0.0, min(1.0, float(ayar["bekleme_parlaklik"]) / 100.0))
-    return (r * k, g * k, b * k)
+    if ayar.get("bekleme_mod") == "gokkusagi":
+        # klavye boyunca yavasca akan gokkusagi
+        sonuc = []
+        for z in range(n):
+            r, g, b = colorsys.hsv_to_rgb((simdi * 0.08 + z / n) % 1.0, 1.0, 1.0)
+            sonuc.append((r * 255 * k, g * 255 * k, b * 255 * k))
+        return sonuc
+    r, g, b = hex_rgb(ayar["bekleme_renk"])
+    return [(r * k, g * k, b * k)] * n
+
+
+# ------------------------------ EFEKTLER ------------------------------
+# (anahtar, ad, aciklama)
+EFEKTLER = [
+    ("dalga", "Dalga", "Basılan yerden iki yana yayılan halka"),
+    ("yanki", "Yankı", "Halka üç kez, giderek sönerek tekrarlanır"),
+    ("yildiz", "Kuyruklu yıldız", "Işık klavyenin öbür ucuna kuyruğuyla kayar"),
+    ("nabiz", "Nabız", "Bütün klavye bir an parlayıp söner"),
+    ("kivilcim", "Kıvılcım", "Basılan yerin çevresinde rastgele çakan kıvılcımlar"),
+    ("isi", "Isı haritası", "Hızlı yazdıkça ısınır: maviden kırmızıya, sonra beyaza"),
+]
+EFEKT_ADLARI = [e[0] for e in EFEKTLER]
+
+ISI_RENKLERI = [  # soguktan sicaga
+    (0.00, (0, 0, 0)), (0.15, (20, 30, 160)), (0.35, (130, 20, 200)),
+    (0.55, (255, 30, 40)), (0.75, (255, 140, 0)), (0.90, (255, 230, 60)),
+    (1.00, (255, 255, 255)),
+]
+
+
+def _isi_rengi(t):
+    t = max(0.0, min(1.0, t))
+    for (t1, c1), (t2, c2) in zip(ISI_RENKLERI, ISI_RENKLERI[1:]):
+        if t <= t2:
+            f = (t - t1) / (t2 - t1)
+            return tuple(c1[i] + (c2[i] - c1[i]) * f for i in range(3))
+    return ISI_RENKLERI[-1][1]
+
+
+def _halka(mesafe, yaricap, kalinlik):
+    return max(0.0, 1.0 - abs(mesafe - yaricap) / kalinlik)
+
+
+def omur_sure(ayar):
+    """Bir basisin ekranda kalma suresi (saniye); bundan eskiler silinir."""
+    e = ayar.get("efekt", "dalga")
+    omur = max(0.05, float(ayar["omur"]))
+    hiz = max(0.5, float(ayar["hiz"]))
+    if e == "yanki":
+        return 0.7 + omur * 2.5
+    if e == "yildiz":
+        return (BOLGE_SAYISI + 2 * float(ayar["kalinlik"])) / hiz + omur
+    if e == "kivilcim":
+        return 0.7
+    if e == "isi":
+        return 4.5
+    return omur * 2.5
+
+
+def kapasite(ayar):
+    """Ayni anda hesaba katilan en fazla basis."""
+    e = ayar.get("efekt", "dalga")
+    if e == "isi":
+        return 60
+    if e == "kivilcim":
+        return 16
+    return max(1, int(ayar["max_dalga"]))
 
 
 def kare_hesapla(aktif, simdi, ayar):
-    """Verilen dalgalar icin 8 bolgenin (R,G,B) degerlerini hesaplar."""
+    """Verilen basislar icin 8 bolgenin (R,G,B) degerlerini hesaplar."""
     n = BOLGE_SAYISI
+    efekt = ayar.get("efekt", "dalga")
     hiz = float(ayar["hiz"])
     kalinlik = max(MIN_KALINLIK, float(ayar["kalinlik"]))
     omur = max(0.05, float(ayar["omur"]))
     parlaklik = max(0.0, min(1.0, float(ayar["parlaklik"]) / 100.0))
-    taban = bekleme_rengi(ayar)
-    toplam = [list(taban) for _ in range(n)]
-    for merkez, basla, (r, g, b) in aktif:
-        yas = simdi - basla
-        yaricap = yas * hiz
-        sonum = math.exp(-yas / omur)
+    toplam = [list(c) for c in bekleme_renkleri(ayar, simdi)]
+
+    def ekle(z, renk, v):
+        v *= parlaklik
+        toplam[z][0] += renk[0] * v
+        toplam[z][1] += renk[1] * v
+        toplam[z][2] += renk[2] * v
+
+    if efekt == "isi":
+        enerji = [0.0] * n
+        for merkez, basla, _ in aktif:
+            sonum = math.exp(-(simdi - basla) / 1.4)
+            for z in range(n):
+                m = (z + 0.5) - merkez
+                enerji[z] += sonum * math.exp(-(m * m) / (2 * (0.6 * kalinlik) ** 2))
         for z in range(n):
-            mesafe = abs((z + 0.5) - merkez)
-            fark = abs(mesafe - yaricap)
-            siddet = max(0.0, 1.0 - fark / kalinlik)
-            if yas < 0.08 and mesafe < 0.8:  # basilan yer ilk anda parlasin
-                siddet = 1.0
-            v = siddet * sonum * parlaklik
-            toplam[z][0] += r * v
-            toplam[z][1] += g * v
-            toplam[z][2] += b * v
+            ekle(z, _isi_rengi(enerji[z] / 9.0), 1.0)
+        aktif = ()
+
+    for merkez, basla, renk in aktif:
+        yas = simdi - basla
+        if yas < 0:
+            continue
+        if efekt == "yanki":
+            for k, guc in enumerate((1.0, 0.55, 0.3)):
+                y = yas - k * 0.3
+                if y < 0:
+                    continue
+                s = math.exp(-y / omur) * guc
+                for z in range(n):
+                    ekle(z, renk, _halka(abs((z + 0.5) - merkez), y * hiz, kalinlik) * s)
+        elif efekt == "yildiz":
+            yon = 1.0 if merkez < n / 2 else -1.0  # uzak kenara dogru kayar
+            bas = merkez + yon * yas * hiz
+            kuyruk = kalinlik * 2.2
+            sonum = math.exp(-yas / (omur * 3))
+            for z in range(n):
+                d = ((z + 0.5) - bas) * yon  # >0: basin onu, <0: kuyruk
+                v = max(0.0, 1.0 - d / 0.6) if d > 0 else max(0.0, 1.0 + d / kuyruk)
+                ekle(z, renk, v * sonum)
+        elif efekt == "nabiz":
+            atak = min(1.0, yas / 0.04)
+            sonum = math.exp(-yas / (omur * 0.8)) * atak
+            for z in range(n):
+                m = abs((z + 0.5) - merkez)
+                ekle(z, renk, sonum * (0.55 + 0.45 * max(0.0, 1.0 - m / 4.0)))
+        elif efekt == "kivilcim":
+            rnd = random.Random(int(basla * 1e6))
+            for _ in range(6):
+                z = int(round(rnd.gauss(merkez - 0.5, kalinlik * 1.2)))
+                if not 0 <= z < n:
+                    continue
+                y = yas - rnd.random() * 0.3
+                if 0 <= y < 0.3:
+                    ekle(z, renk, 1.0 - y / 0.3)
+        else:  # dalga
+            sonum = math.exp(-yas / omur)
+            for z in range(n):
+                m = abs((z + 0.5) - merkez)
+                s = _halka(m, yas * hiz, kalinlik)
+                if yas < 0.08 and m < 0.8:  # basilan yer ilk anda parlasin
+                    s = 1.0
+                ekle(z, renk, s * sonum)
+
     return tuple(
         (min(255, int(c[0])), min(255, int(c[1])), min(255, int(c[2]))) for c in toplam
     )
@@ -229,7 +350,7 @@ class Motor:
             return
         with self.kilit:
             self.dalgalar.append((merkez, time.time(), self._renk_sec()))
-            del self.dalgalar[: -max(1, int(self.ayar["max_dalga"]))]
+            del self.dalgalar[: -kapasite(self.ayar)]
 
     def baslat(self):
         if self.calisiyor:
@@ -278,9 +399,9 @@ class Motor:
         while not self.durdur_ev.is_set():
             t0 = time.time()
             aralik = 1.0 / max(5, int(self.ayar["fps"]))
-            omur = max(0.05, float(self.ayar["omur"]))
+            sure = omur_sure(self.ayar)
             with self.kilit:
-                self.dalgalar[:] = [d for d in self.dalgalar if t0 - d[1] < omur * 2.5]
+                self.dalgalar[:] = [d for d in self.dalgalar if t0 - d[1] < sure]
                 aktif = list(self.dalgalar)
 
             kare = kare_hesapla(aktif, t0, self.ayar)
@@ -438,6 +559,62 @@ class Segment(tk.Canvas):
             self.geri(d)
 
 
+class Secim(tk.Canvas):
+    """Izgara halinde secenek kutucuklari (efekt secici)."""
+
+    def __init__(self, ebeveyn, secenekler, deger, geri, bg, sutun=3):
+        self.sutun = sutun
+        self.satir = (len(secenekler) + sutun - 1) // sutun
+        self.sh, self.ara = px(34), px(6)
+        super().__init__(ebeveyn, height=self.satir * self.sh + (self.satir - 1) * self.ara,
+                         bg=bg, highlightthickness=0, cursor="hand2")
+        self.secenekler, self.deger, self.geri, self.ust = secenekler, deger, geri, None
+        self.bind("<Configure>", lambda e: self.ciz())
+        self.bind("<Button-1>", self._tik)
+        self.bind("<Motion>", self._hareket)
+        self.bind("<Leave>", lambda e: self._hareket(None))
+
+    def _kutu(self, i):
+        w = self.winfo_width()
+        kw = (w - (self.sutun - 1) * self.ara) / self.sutun
+        r, c = divmod(i, self.sutun)
+        x1, y1 = c * (kw + self.ara), r * (self.sh + self.ara)
+        return x1, y1, x1 + kw, y1 + self.sh
+
+    def _indeks(self, e):
+        for i in range(len(self.secenekler)):
+            x1, y1, x2, y2 = self._kutu(i)
+            if x1 <= e.x <= x2 and y1 <= e.y <= y2:
+                return i
+        return None
+
+    def ciz(self):
+        self.delete("all")
+        for i, (ad, d) in enumerate(self.secenekler):
+            x1, y1, x2, y2 = self._kutu(i)
+            secili = d == self.deger
+            if secili:
+                yuvarlak(self, x1, y1, x2, y2, px(8), fill=FG, outline="")
+            else:
+                yuvarlak(self, x1, y1, x2, y2, px(8),
+                         fill=CIZGI if self.ust == i else YUZEY, outline=CIZGI)
+            self.create_text((x1 + x2) / 2, (y1 + y2) / 2, text=ad, font=font(9, secili),
+                             fill=BG if secili else FG)
+
+    def _hareket(self, e):
+        i = None if e is None else self._indeks(e)
+        if i != self.ust:
+            self.ust = i
+            self.ciz()
+
+    def _tik(self, e):
+        i = self._indeks(e)
+        if i is not None and self.secenekler[i][1] != self.deger:
+            self.deger = self.secenekler[i][1]
+            self.ciz()
+            self.geri(self.deger)
+
+
 class Ornek(tk.Canvas):
     """Renk kutucugu. Tiklayinca renk secici acar."""
 
@@ -453,7 +630,7 @@ class Ornek(tk.Canvas):
         s = px(30)
         if self.gokkusagi:
             for i in range(s):
-                r, g, b = colorsys.hsv_to_rgb(i / s, 0.75, 0.95)
+                r, g, b = colorsys.hsv_to_rgb(i / s, 0.75, 0.95 if self.aktif else 0.35)
                 self.create_line(i, 0, i, s, fill=rgb_hex(r * 255, g * 255, b * 255))
             yuvarlak(self, -px(1), -px(1), s + px(1), s + px(1), px(9),
                      outline=self.bg, width=px(4), fill="")
@@ -597,6 +774,12 @@ class Uygulama:
         self.liste.pack(fill="x")
 
         self._bolum("Efekt")
+        self.secim = Secim(self.liste, [(e[1], e[0]) for e in EFEKTLER],
+                           self.ayar["efekt"], self._efekt_degisti, BG)
+        self.secim.pack(fill="x", pady=(px(10), 0))
+        self.efekt_aciklama = tk.Label(self.liste, text="", font=font(9), fg=SOLUK, bg=BG,
+                                       anchor="w")
+        self.efekt_aciklama.pack(fill="x", pady=(px(6), px(2)))
         self._kaydirici("Hız", "hiz", 2, 20, 0.5, lambda v: f"{v:.1f}")
         self._kaydirici("Kalınlık", "kalinlik", MIN_KALINLIK, 4.0, 0.1, lambda v: f"{v:.1f}")
         self._kaydirici("Parlaklık", "parlaklik", 5, 100, 1, lambda v: f"{int(v)}%", True)
@@ -613,9 +796,13 @@ class Uygulama:
         sag = self._satir("Açık")
         self.bek_anahtar = Anahtar(sag, self.ayar["bekleme_acik"], self._bek_ac, BG)
         self.bek_anahtar.pack(side="right")
-        sag = self._satir("Renk")
+        sag = self._satir("Mod")
         self.bek_ornek = Ornek(sag, self.ayar["bekleme_renk"], self._bek_renk_sec, BG)
         self.bek_ornek.pack(side="right")
+        self.bek_segment = Segment(sag, [("Sabit", "sabit"), ("Gökkuşağı", "gokkusagi")],
+                                   self.ayar["bekleme_mod"], self._bek_mod_degisti, BG,
+                                   genislik=180)
+        self.bek_segment.pack(side="right", padx=(0, px(10)))
         self.bek_slider = self._kaydirici("Parlaklık", "bekleme_parlaklik", 1, 100, 1,
                                           lambda v: f"{int(v)}%", True)
 
@@ -668,6 +855,9 @@ class Uygulama:
         self.ornek.ciz()
         acik = self.ayar["bekleme_acik"]
         self.bek_ornek.aktif = acik
+        self.bek_ornek.gokkusagi = self.ayar["bekleme_mod"] == "gokkusagi"
+        self.efekt_aciklama.config(
+            text=next(e[2] for e in EFEKTLER if e[0] == self.ayar["efekt"]))
         self.bek_ornek.renk = self.ayar["bekleme_renk"]
         self.bek_ornek.ciz()
         self.bek_slider.aktif = acik
@@ -704,6 +894,17 @@ class Uygulama:
             self._gorunum_senkron()
             self._kaydet_planla()
 
+    def _efekt_degisti(self, deger):
+        self.ayar["efekt"] = deger
+        self.deneme.clear()
+        self._gorunum_senkron()
+        self._kaydet_planla()
+
+    def _bek_mod_degisti(self, deger):
+        self.ayar["bekleme_mod"] = deger
+        self._gorunum_senkron()
+        self._kaydet_planla()
+
     def _gg_ac(self, deger):
         self.ayar["gg_geri"] = bool(deger)
         self._kaydet_planla()
@@ -713,7 +914,7 @@ class Uygulama:
             return
         merkez = max(0.0, min(BOLGE_SAYISI - 1e-6, merkez))
         self.deneme.append((merkez, time.time(), self.motor._renk_sec()))
-        del self.deneme[:-8]
+        del self.deneme[:-kapasite(self.ayar)]
 
     def _ac_kapat(self):
         self.ana.ayarla("Durduruluyor…" if self.motor.calisiyor else "Bağlanıyor…",
@@ -734,8 +935,8 @@ class Uygulama:
             self.ipucu.config(text="Klavyende yazdıkça burada da görünür")
         else:
             simdi = time.time()
-            omur = max(0.05, float(self.ayar["omur"]))
-            self.deneme[:] = [d for d in self.deneme if simdi - d[1] < omur * 2.5]
+            sure = omur_sure(self.ayar)
+            self.deneme[:] = [d for d in self.deneme if simdi - d[1] < sure]
             kare = kare_hesapla(self.deneme, simdi, self.ayar)
             self.ipucu.config(text="Denemek için önizlemeye tıkla")
         self.onizleme.goster(kare)
