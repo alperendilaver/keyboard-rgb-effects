@@ -49,6 +49,7 @@ VARSAYILAN = {
     "bekleme_mod": "sabit",     # BEKLEME_MODLARI listesinden biri
     "bekleme_renk": "#3b1fa3",  # bekleme isigi rengi
     "bekleme_parlaklik": 35,    # bekleme isigi parlakligi, yuzde 1-100
+    "bekleme_hiz": 1.0,         # bekleme animasyon hizi, 0.2x - 3x
     "gg_geri": True,            # calisirken GG isiklarini duraklat, durunca geri getir
     "omur": 0.55,               # dalganin sonme suresi (saniye)  [sadece dosyadan]
     "fps": 25,                  # kare hizi                       [sadece dosyadan]
@@ -66,6 +67,7 @@ def ayar_temizle(ayar):
         ("kalinlik", MIN_KALINLIK, 4.0),
         ("parlaklik", 5, 100),
         ("bekleme_parlaklik", 1, 100),
+        ("bekleme_hiz", 0.2, 3.0),
     ):
         try:
             v = float(ayar[k])
@@ -176,6 +178,26 @@ BEKLEME_MODLARI = [
 ]
 
 
+class _Faz:
+    """Hiz degisince animasyon ziplamasin diye fazi biriktirir."""
+
+    def __init__(self):
+        self.t = None
+        self.faz = 0.0
+        self.hiz = 1.0
+
+    def al(self, simdi, hiz):
+        if self.t is None or simdi < self.t:
+            self.t = simdi
+        if hiz != self.hiz:  # yeni hiza gecerken mevcut fazdan devam et
+            self.faz += (simdi - self.t) * self.hiz
+            self.t, self.hiz = simdi, hiz
+        return self.faz + (simdi - self.t) * self.hiz
+
+
+_faz = _Faz()
+
+
 def bekleme_renkleri(ayar, simdi):
     """Bekleme isigi: her bolge icin (R,G,B) float. Kapaliysa siyah."""
     n = BOLGE_SAYISI
@@ -183,21 +205,22 @@ def bekleme_renkleri(ayar, simdi):
         return [(0.0, 0.0, 0.0)] * n
     k = max(0.0, min(1.0, float(ayar["bekleme_parlaklik"]) / 100.0))
     mod = ayar.get("bekleme_mod")
+    t = _faz.al(simdi, float(ayar.get("bekleme_hiz", 1.0)))  # hizla olceklenmis zaman
     if mod == "dongu":
         # butun klavye birlikte, yavasca renk degistirir (~20 sn'de bir tur)
-        r, g, b = colorsys.hsv_to_rgb((simdi * 0.05) % 1.0, 1.0, 1.0)
+        r, g, b = colorsys.hsv_to_rgb((t * 0.05) % 1.0, 1.0, 1.0)
         return [(r * 255 * k, g * 255 * k, b * 255 * k)] * n
     if mod == "akis":
         # klavye boyunca akan gokkusagi
         sonuc = []
         for z in range(n):
-            r, g, b = colorsys.hsv_to_rgb((simdi * 0.08 + z / n) % 1.0, 1.0, 1.0)
+            r, g, b = colorsys.hsv_to_rgb((t * 0.08 + z / n) % 1.0, 1.0, 1.0)
             sonuc.append((r * 255 * k, g * 255 * k, b * 255 * k))
         return sonuc
     r, g, b = hex_rgb(ayar["bekleme_renk"])
     if mod == "nefes":
         # 4 saniyede bir yavasca dolup bosalan isik
-        k *= 0.12 + 0.88 * (0.5 - 0.5 * math.cos(2 * math.pi * simdi / 4.0))
+        k *= 0.12 + 0.88 * (0.5 - 0.5 * math.cos(2 * math.pi * t / 4.0))
     return [(r * k, g * k, b * k)] * n
 
 
@@ -898,6 +921,8 @@ class Uygulama:
         sag = self._satir("Renk")
         self.bek_ornek = Ornek(sag, self.ayar["bekleme_renk"], self._bek_renk_sec, BG)
         self.bek_ornek.pack(side="right")
+        self.bek_hiz = self._kaydirici("Hız", "bekleme_hiz", 0.2, 3.0, 0.1,
+                                       lambda v: f"{v:.1f}x")
         self.bek_slider = self._kaydirici("Parlaklık", "bekleme_parlaklik", 1, 100, 1,
                                           lambda v: f"{int(v)}%", True)
 
@@ -959,6 +984,10 @@ class Uygulama:
         self.bek_slider.aktif = acik
         self.bek_slider.ciz()
         self.bek_slider.etiket.config(fg=SOLUK if acik else PASIF)
+        hareketli = acik and self.ayar["bekleme_mod"] != "sabit"
+        self.bek_hiz.aktif = hareketli
+        self.bek_hiz.ciz()
+        self.bek_hiz.etiket.config(fg=SOLUK if hareketli else PASIF)
 
     def _kaydet_planla(self):
         if self._kayit_zamanlayici is not None:
